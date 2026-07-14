@@ -4,6 +4,12 @@ A collection of processing scripts for China wind/solar installable-capacity pot
 assessment, gridded allocation of province-level planning targets, and economic /
 emission-reduction benefit accounting.
 
+> All scripts in this repository were restructured from the original Jupyter Notebooks /
+> earlier scripts. **The calculation logic is identical to the original code** — only
+> structural reorganization was done (splitting into functions, centralizing path/parameter
+> configuration, adding comments); no calculation results were changed.
+> The original files are kept in [`original_notebooks/`](original_notebooks) for traceability.
+
 
 ## Pipeline overview
 
