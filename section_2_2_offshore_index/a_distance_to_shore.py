@@ -15,7 +15,7 @@ GRID_FILTER = "Shengcode = 100"
 arcpy.env.overwriteOutput = True
 arcpy.env.workspace = scratch_gdb
 
-# ---------- 确保字段存在 ----------
+# ---------- Ensure the field exists ----------
 def add_field_safe(fc, field_name, field_type):
     existing = [f.name for f in arcpy.ListFields(fc)]
     if field_name not in existing:
@@ -23,7 +23,7 @@ def add_field_safe(fc, field_name, field_type):
 
 add_field_safe(grid_10km, "off_idx_shore", "DOUBLE")
 
-# ---------- 筛选海上网格并生成中心点 ----------
+# ---------- Filter offshore grid cells and generate centroids ----------
 grid_layer = "grid_sea_layer"
 arcpy.MakeFeatureLayer_management(grid_10km, grid_layer, GRID_FILTER)
 
@@ -37,19 +37,19 @@ if arcpy.Exists(centroids):
     arcpy.management.Delete(centroids)
 arcpy.management.FeatureToPoint(sea_fc, centroids, "CENTROID")
 
-# ---------- 计算最近距离 (米) ----------
+# ---------- Calculate the nearest distance (meters) ----------
 near_table = os.path.join(scratch_gdb, "shore_near")
 if arcpy.Exists(near_table):
     arcpy.management.Delete(near_table)
 arcpy.analysis.Near(centroids, wind_shore, method="GEODESIC")
 
-# ---------- 构建距离字典 (转换为 km) ----------
+# ---------- Build the distance lookup (convert to km) ----------
 dist_dict = {}
 with arcpy.da.SearchCursor(centroids, [GRID_ID_FIELD, "NEAR_DIST"]) as cur:
     for row in cur:
-        dist_dict[row[0]] = row[1] / 1000.0  # 米 -> 千米
+        dist_dict[row[0]] = row[1] / 1000.0  # m -> km
 
-# ---------- 赋值 ----------
+# ---------- Assign values ----------
 with arcpy.da.UpdateCursor(grid_10km, [GRID_ID_FIELD, "off_idx_shore"], GRID_FILTER) as cur:
     for row in cur:
         d = dist_dict.get(row[0])
