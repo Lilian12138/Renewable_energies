@@ -21,13 +21,13 @@ solar_density = os.path.join(base_folder, r"processing\tables\wind_solar_capacit
 add_field_safe(solar_valid_area, "NID10_INT", "LONG")
 arcpy.management.CalculateField(solar_valid_area, "NID10_INT", "int(!NID10!)", "PYTHON3")
 
-# DEM和坡度
+# DEM and slope
 dem = os.path.join(base_folder, r"processing\gisfiles\DEM\chinadem250.tif")
 slope = os.path.join(base_folder, r"processing\gisfiles\slope\chinaslope250.tif")
 
 scratch_gdb = os.path.join(base_folder, r"processing\arcprojects\MyProject1\scratch.gdb")
 
-# 坡度均值
+# Mean slope
 slope_stats = os.path.join(scratch_gdb, "solar_slope_stats")
 arcpy.sa.ZonalStatisticsAsTable(solar_valid_area, "NID10_INT", slope, slope_stats, "DATA", "MEAN")
 arcpy.management.JoinField(solar_valid_area, "NID10_INT", slope_stats, "NID10_INT", ["MEAN"])
@@ -35,7 +35,7 @@ add_field_safe(solar_valid_area, "slope_mean", "DOUBLE")
 arcpy.management.CalculateField(solar_valid_area, "slope_mean", "!MEAN!", "PYTHON3")
 arcpy.management.DeleteField(solar_valid_area, "MEAN")
 
-# 起伏度（高程极差）
+# Relief (elevation range)
 relief_stats = os.path.join(scratch_gdb, "solar_relief_stats")
 arcpy.sa.ZonalStatisticsAsTable(solar_valid_area, "NID10_INT", dem, relief_stats, "DATA", "RANGE")
 arcpy.management.JoinField(solar_valid_area, "NID10_INT", relief_stats, "NID10_INT", ["RANGE"])
@@ -43,7 +43,7 @@ add_field_safe(solar_valid_area, "relief", "DOUBLE")
 arcpy.management.CalculateField(solar_valid_area, "relief", "!RANGE!", "PYTHON3")
 arcpy.management.DeleteField(solar_valid_area, "RANGE")
 
-# 地形分类
+# Terrain classification
 add_field_safe(solar_valid_area, "terrain", "SHORT")
 
 with arcpy.da.UpdateCursor(solar_valid_area, ["slope_mean", "relief", "terrain", "Shengcode"]) as cursor:
@@ -64,10 +64,10 @@ with arcpy.da.UpdateCursor(solar_valid_area, ["slope_mean", "relief", "terrain",
             elif s < 30:
                 row[2] = 3
             else:
-                row[2] = 0  # 仅坡度≥30°的才排除
+                row[2] = 0  # Exclude only areas with slopes of 30 degrees or more
         cursor.updateRow(row)
 
-# 读取密度表，按地形类型分组构建插值查找表
+# Read the density table and build interpolation lookup tables by terrain type
 solar_density_df = pd.read_excel(solar_density, sheet_name="solar_sel")
 density_lookup = {}
 for t in [1, 2, 3]:
@@ -77,7 +77,7 @@ for t in [1, 2, 3]:
         "density": sub["110KV(kw/km2)"].values
     }
 
-# 容量密度插值
+# Capacity density interpolation
 add_field_safe(solar_valid_area, "cap_dens", "DOUBLE")
 
 with arcpy.da.UpdateCursor(solar_valid_area, ["terrain", "SHAPE@", "cap_dens"]) as cursor:
@@ -93,7 +93,7 @@ with arcpy.da.UpdateCursor(solar_valid_area, ["terrain", "SHAPE@", "cap_dens"]) 
             row[2] = density
         cursor.updateRow(row)
 
-# 计算装机容量 (kW) = 容量密度 (kW/km²) × 有效面积 (km²)
+# Calculate installed capacity (kW) = capacity density (kW/km²) × valid area (km²)
 add_field_safe(solar_valid_area, "cap_kw", "DOUBLE")
 with arcpy.da.UpdateCursor(solar_valid_area, ["cap_dens", "validArea", "cap_kw"]) as cursor:
     for row in cursor:
