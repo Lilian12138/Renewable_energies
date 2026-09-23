@@ -6,35 +6,35 @@ from scipy.stats import spearmanr
 import os
 
 # ============================================================
-# 配置
+# Configuration
 # ============================================================
 base_folder = Path(__file__).resolve().parents[3]
 sens_gdb = os.path.join(base_folder, r"processing\arcprojects\MyProject1\sensitivity.gdb")
 arcpy.env.workspace = sens_gdb
 
-# 按你实际写入 sensitivity.gdb 的情景字段来配置
+# Configure according to the scenario fields actually written to sensitivity.gdb
 SCENARIOS = {
     "wind_onshore": ["baseline", "resource", "infra", "terrain", "equal"],
     "wind_offshore": ["baseline", "resource", "infra", "equal"],
     "solar": ["baseline", "resource", "infra", "terrain", "equal"],
 }
 
-# 三套评价体系（要素类前缀）
+# Three evaluation systems (feature-class prefixes)
 SYSTEMS = ["wind_onshore", "wind_offshore", "solar"]
 
 OUT_FOLDER = os.path.join(base_folder, r"processing\tables")
 
 
 # ============================================================
-# 第一部分：探测字段结构
+# Part 1: Inspect the field structure
 # ============================================================
 def inspect_fields():
     
-    print("=== 全部要素类 ===")
+    print("=== All Feature Classes ===")
     for fc in arcpy.ListFeatureClasses():
         print(" ", fc)
 
-    # 以第一个存在的要素类为样本看字段
+    # Use the first existing feature class as a sample for field inspection
     sample = None
     for sys in SYSTEMS:
         name = f"{sys}_baseline"
@@ -42,14 +42,14 @@ def inspect_fields():
             sample = name
             break
     if sample:
-        print(f"\n=== {sample} 字段 ===")
+        print(f"\n=== {sample} Fields ===")
         for f in arcpy.ListFields(sample):
             print(f"  {f.name} | {f.type}")
     return sample
 
 
 # ============================================================
-# 工具：把要素类读成 DataFrame（自动挑存在的字段）
+# Utility: read a feature class into a DataFrame (automatically select existing fields)
 # ============================================================
 def fc_to_df(fc_name, wanted_fields):
     all_fields = [f.name for f in arcpy.ListFields(fc_name)]
@@ -59,7 +59,7 @@ def fc_to_df(fc_name, wanted_fields):
 
 
 # ============================================================
-# 自动识别年份分配列（prov_2030 / lc_2030 等）
+# Automatically identify yearly allocation columns (prov_2030 / lc_2030, etc.)
 # ============================================================
 def detect_year_cols(fc_name):
     all_fields = [f.name for f in arcpy.ListFields(fc_name)]
@@ -69,7 +69,7 @@ def detect_year_cols(fc_name):
 
 
 # ============================================================
-# 识别网格ID列
+# Identify the grid ID column
 # ============================================================
 def detect_id_field(fc_name):
     
@@ -81,7 +81,7 @@ def detect_id_field(fc_name):
 
 
 # ============================================================
-# 比较 baseline 与情景（单省单年）
+# Compare baseline with a scenario (one province and one year)
 # ============================================================
 def compare_one(base, scen):
     df = pd.DataFrame({"base": base, "scen": scen}).dropna()
@@ -105,7 +105,7 @@ def compare_one(base, scen):
 
 
 # ============================================================
-# 第二部分：主分析
+# Part 2: Main analysis
 # ============================================================
 def run_analysis():
     detail_rows = []
@@ -113,7 +113,7 @@ def run_analysis():
     for sys in SYSTEMS:
         base_fc = f"{sys}_baseline"
         if not arcpy.Exists(base_fc):
-            print(f"跳过（不存在）: {base_fc}")
+            print(f"Skipping (does not exist): {base_fc}")
             continue
 
         id_field = detect_id_field(base_fc)
@@ -123,10 +123,10 @@ def run_analysis():
         if lc_cols:   plan_sets["low_carbon"] = lc_cols
 
         if not plan_sets:
-            print(f"⚠ {base_fc} 未找到 prov_/lc_ 年份列，跳过。请确认分配量列名。")
+            print(f"⚠ No prov_/lc_ year columns found in {base_fc}; skipping. Verify the allocation column names.")
             continue
 
-        # 读 baseline
+        # Read the baseline
         base_wanted = [id_field, "Shengcode"] + prov_cols + lc_cols
         base_df = fc_to_df(base_fc, base_wanted).set_index(id_field)
 
@@ -136,7 +136,7 @@ def run_analysis():
                 continue
             scen_fc = f"{sys}_{scen}"
             if not arcpy.Exists(scen_fc):
-                print(f"跳过（不存在）: {scen_fc}")
+                print(f"Skipping (does not exist): {scen_fc}")
                 continue
             scen_df = fc_to_df(scen_fc, base_wanted).set_index(id_field)
 
@@ -164,7 +164,7 @@ def run_analysis():
                             "topN_overlap": overlap,
                             "jaccard": jac,
                         })
-            print(f"[完成] {sys} | {scen}")
+            print(f"[Complete] {sys} | {scen}")
 
     detail = pd.DataFrame(detail_rows)
     import os
@@ -187,15 +187,15 @@ def run_analysis():
     summary.to_csv(os.path.join(OUT_FOLDER, "sensitivity_summary.csv"),
                    index=False, encoding="utf-8-sig")
 
-    print("\n===== 汇总结果 =====")
+    print("\n===== Summary Results =====")
     print(summary.to_string(index=False))
-    print(f"\n明细: {OUT_FOLDER}\\sensitivity_detail.csv")
-    print(f"汇总: {OUT_FOLDER}\\sensitivity_summary.csv")
+    print(f"\nDetails: {OUT_FOLDER}\\sensitivity_detail.csv")
+    print(f"Summary: {OUT_FOLDER}\\sensitivity_summary.csv")
     return detail, summary
 
 
 # ============================================================
 if __name__ == "__main__":
-    sample = inspect_fields()      # 先看结构
+    sample = inspect_fields()      # Inspect the structure first
     print("\n" + "="*60)
-    run_analysis()                 # 再算一致性
+    run_analysis()                 # Then calculate consistency
