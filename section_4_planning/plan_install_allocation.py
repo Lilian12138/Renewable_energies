@@ -1,7 +1,7 @@
 """
-分省分年份网格装机容量分配脚本
-逻辑：按 2030 → 2035 → 2040 → 2050 → 2060 顺序，每个年份以上一年为保底，增量按评分排序贪心填充。
-输出列：NID50, NID10_INT, Shengcode, kw2025, kw2030, kw2035, kw2040, kw2050, kw2060
+Grid-level installed-capacity allocation by province and year.
+Logic: process 2030 -> 2035 -> 2040 -> 2050 -> 2060 in order, using the previous year's result as the baseline and greedily allocating increments by score ranking.
+Output columns: NID50, NID10_INT, Shengcode, kw2025, kw2030, kw2035, kw2040, kw2050, kw2060
 """
 
 from pathlib import Path
@@ -10,11 +10,11 @@ import pandas as pd
 import numpy as np
 
 # ============================================================
-# 1. 路径配置（与你原始代码一致）
+# 1. Path configuration (consistent with the original code)
 # ============================================================
 base_folder = Path(__file__).resolve().parents[3]
 
-# 评分网格 (feature class in GDB)
+# Score grid (feature class in GDB)
 score_path = os.path.join(
     base_folder,
     r"processing\arcprojects\MyProject1\MyProject1.gdb\CL_WGS84"
@@ -23,7 +23,7 @@ onshore_wind_score = "score_wind_onshore"
 offshore_wind_score = "score_wind_offshore"
 onshore_solar_score = "score_pv_onshore"
 
-# 省级规划表
+# Provincial planning table
 planning_path = os.path.join(
     base_folder,
     r"processing\tables\Planned installed capacity.xlsx"
@@ -31,20 +31,20 @@ planning_path = os.path.join(
 wind_sheetname = "Wind"
 solar_sheetname = "Solar"
 
-# 网格装机潜力 shapefile（最大可装机容量 KW2）
+# Grid installation-potential shapefile (maximum installable capacity, KW2)
 potential_wind_shp = os.path.join(
     base_folder,
     r"processing\gisfiles\GridValidArea\grid10km_wind_valid_area_statistic.shp"
 )
-potential_cap_wind = "cap_kw_new"  # 潜力字段 → 重命名为 KW2
+potential_cap_wind = "cap_kw_new"  # Potential field -> renamed to KW2
 
 potential_solar_shp = os.path.join(
     base_folder,
     r"processing\gisfiles\GridValidArea\grid10km_solar_valid_area_statistic.shp"
 )
-potential_cap_solar = "cap_kw"  # 潜力字段 → 重命名为 KW2
+potential_cap_solar = "cap_kw"  # Potential field -> renamed to KW2
 
-# 网格装机现状 (feature class in GDB)，字段名均为 kw2025
+# Current grid installations (feature classes in GDB), both using the field name kw2025
 current_wind_fc = os.path.join(
     base_folder,
     r"processing\arcprojects\MyProject1\installation.gdb\grid_wind_turbine_count"
@@ -53,31 +53,31 @@ current_solar_fc = os.path.join(
     base_folder,
     r"processing\arcprojects\MyProject1\installation.gdb\grid_solar_panel_area"
 )
-current_cap_field = "kw2025"  # 两个现状 fc 中的装机字段名
+current_cap_field = "kw2025"  # Installed-capacity field name in both current feature classes
 
 NID10_INT = "NID10_INT"
 
-# 年份配置
+# Year configuration
 YEARS = [2030, 2035, 2040, 2050, 2060]
 
-# 两套情景的规划表列名
+# Planning-table column names for the two scenarios
 PROVINCE_PLAN_COLS = [f"{y}_province" for y in YEARS]
 LOWCARBON_PLAN_COLS = [f"{y}_low_carbon" for y in YEARS]
 
-# 两套情景的输出列名（网格级）
-PROV_YEAR_COLS = [f"prov_{y}" for y in YEARS]       # province 情景
-LC_YEAR_COLS   = [f"lc_{y}" for y in YEARS]         # low_carbon 情景
+# Grid-level output column names for the two scenarios
+PROV_YEAR_COLS = [f"prov_{y}" for y in YEARS]       # Province scenario
+LC_YEAR_COLS   = [f"lc_{y}" for y in YEARS]         # Low-carbon scenario
 ALL_YEAR_COLS  = ["kw2025"] + PROV_YEAR_COLS + LC_YEAR_COLS
 
-# 最终保留的输出列
+# Final output columns to retain
 OUTPUT_COLS = ["NID50", NID10_INT, "Shengcode"] + ALL_YEAR_COLS
 
 
 # ============================================================
-# 2. 数据读取（使用 arcpy 读 shapefile / feature class）
+# 2. Data loading (use arcpy to read shapefiles / feature classes)
 # ============================================================
 def read_feature_to_df(fc_path, fields):
-    """用 arcpy 将 feature class / shapefile 读为 DataFrame"""
+    """Read a feature class / shapefile into a DataFrame using arcpy."""
     import arcpy
     all_fields = [f.name for f in arcpy.ListFields(fc_path)]
     use_fields = [f for f in fields if f in all_fields]
@@ -87,17 +87,17 @@ def read_feature_to_df(fc_path, fields):
 
 def ensure_nid10_int(fc_path, df):
     """
-    确保 DataFrame 中有 NID10_INT 列（long 整型）。
-    如果原数据只有 NID10（文本），则转换并重命名。
+    Ensure that the DataFrame contains a long-integer NID10_INT column.
+    If the source data contains only the text NID10 column, convert and rename it.
     """
     import arcpy
     all_fields = [f.name for f in arcpy.ListFields(fc_path)]
 
     if NID10_INT in df.columns:
-        # 已有 NID10_INT，确保整型
+        # NID10_INT already exists; ensure it is an integer
         df[NID10_INT] = df[NID10_INT].astype(int)
     elif "NID10" in df.columns:
-        # 只有 NID10，转为整型并重命名
+        # Only NID10 exists; convert it to an integer and rename it
         df[NID10_INT] = df["NID10"].astype(int)
         df = df.drop(columns=["NID10"])
     return df
@@ -105,11 +105,11 @@ def ensure_nid10_int(fc_path, df):
 
 def load_grid_data(potential_shp, potential_field, current_fc):
     """
-    读取网格数据，合并潜力和现状两个数据源:
-    返回含以下列的 DataFrame:
+    Read grid data and merge the potential and current-installation data sources.
+    Return a DataFrame containing the following columns:
       - NID10_INT, NID50, Shengcode, KW2, kw2025
     """
-    # 读取潜力数据（含 NID50），优先读 NID10_INT，回退到 NID10
+    # Read potential data (including NID50), preferring NID10_INT and falling back to NID10
     import arcpy
     pot_all_fields = [f.name for f in arcpy.ListFields(potential_shp)]
     nid_field_pot = NID10_INT if NID10_INT in pot_all_fields else "NID10"
@@ -119,7 +119,7 @@ def load_grid_data(potential_shp, potential_field, current_fc):
     df_pot = df_pot.rename(columns={potential_field: "KW2"})
     df_pot["KW2"] = df_pot["KW2"].fillna(0)
 
-    # 读取现状装机数据，优先读 NID10_INT，回退到 NID10
+    # Read current installed-capacity data, preferring NID10_INT and falling back to NID10
     cur_all_fields = [f.name for f in arcpy.ListFields(current_fc)]
     nid_field_cur = NID10_INT if NID10_INT in cur_all_fields else "NID10"
     cur_fields = [nid_field_cur, current_cap_field]
@@ -128,27 +128,27 @@ def load_grid_data(potential_shp, potential_field, current_fc):
     df_cur = df_cur.rename(columns={current_cap_field: "kw2025"})
     df_cur["kw2025"] = df_cur["kw2025"].fillna(0)
 
-    # 去重检查：如有重复 NID10_INT，按合计处理
+    # Check for duplicates: aggregate duplicate NID10_INT values by summation
     pot_dup = df_pot[NID10_INT].duplicated().sum()
     cur_dup = df_cur[NID10_INT].duplicated().sum()
     if pot_dup > 0:
-        print(f"  ⚠ 潜力数据 NID10_INT 有 {pot_dup} 条重复，按合计处理")
+        print(f"  ⚠ Potential data contains {pot_dup} duplicate NID10_INT records; aggregating by sum")
         df_pot = df_pot.groupby([NID10_INT, "NID50", "Shengcode"], as_index=False)["KW2"].sum()
     if cur_dup > 0:
-        print(f"  ⚠ 现状数据 NID10_INT 有 {cur_dup} 条重复，按合计处理")
+        print(f"  ⚠ Current-installation data contains {cur_dup} duplicate NID10_INT records; aggregating by sum")
         df_cur = df_cur.groupby(NID10_INT, as_index=False)["kw2025"].sum()
 
-    # 合并：以潜力表为主，左连接现状
+    # Merge: use the potential table as the base and left-join current installations
     df = df_pot.merge(df_cur, on=NID10_INT, how="left")
     df["kw2025"] = df["kw2025"].fillna(0)
 
-    print(f"  潜力网格数: {len(df_pot)}, 现状网格数: {len(df_cur)}, 合并后: {len(df)}")
+    print(f"  Potential grid cells: {len(df_pot)}, current-installation grid cells: {len(df_cur)}, after merge: {len(df)}")
 
     return df
 
 
 def load_score_data(score_fc, score_field):
-    """从评分要素类读取评分，用于 join"""
+    """Read scores from the score feature class for joining."""
     import arcpy
     all_fields = [f.name for f in arcpy.ListFields(score_fc)]
     nid_field = NID10_INT if NID10_INT in all_fields else "NID10"
@@ -156,52 +156,52 @@ def load_score_data(score_fc, score_field):
     df = read_feature_to_df(score_fc, fields)
     df = ensure_nid10_int(score_fc, df)
     df = df.rename(columns={score_field: "Score"})
-    # 去重：如有重复取均值
+    # Deduplicate by taking the mean of duplicate values
     if df[NID10_INT].duplicated().any():
         df = df.groupby(NID10_INT, as_index=False)["Score"].mean()
     return df
 
 
 # ============================================================
-# 3. 核心分配函数（多年份递增）
+# 3. Core allocation function (incremental across years)
 # ============================================================
 def plan_install_multiyear(df, shengcode, kw_targets, year_cols):
     """
-    对单个省份，按年份顺序分配装机到网格。
+    Allocate installed capacity to grid cells for one province in year order.
 
-    参数:
-        df         : 该能源类型的全部网格 DataFrame
-        shengcode  : 省代码
-        kw_targets : list，各年份省级规划目标，单位 **万kW**
-        year_cols  : list，对应输出列名 ['kw2030','kw2035','kw2040','kw2060']
+    Parameters:
+        df         : DataFrame containing all grid cells for this energy type
+        shengcode  : Province code
+        kw_targets : List of provincial planning targets by year, in 10,000 kW
+        year_cols  : List of corresponding output columns ['kw2030','kw2035','kw2040','kw2060']
 
-    返回:
-        该省分配完成的 DataFrame（含所有年份列）
+    Returns:
+        The allocated DataFrame for the province, including all year columns
     """
     df_prov = df.loc[df["Shengcode"] == shengcode].copy()
 
     if df_prov.empty:
-        print(f"  ⚠ 省代码 {shengcode} 无对应网格，跳过")
+        print(f"  ⚠ No grid cells found for province code {shengcode}; skipping")
         return df_prov
 
-    # 按现状装机、评分、最大容量降序排列（优先填高分格子）
+    # Sort by current installations, score, and maximum capacity in descending order (prioritize high-scoring grid cells)
     df_prov = df_prov.sort_values(
         by=["kw2025", "Score", "KW2"], ascending=False
     ).reset_index(drop=True)
 
-    prev_col = "kw2025"  # 起点列：现状装机
+    prev_col = "kw2025"  # Starting column: current installed capacity
 
     for year_col, kw_target_wan in zip(year_cols, kw_targets):
-        kw_target = kw_target_wan * 10000  # 万kW → kW
+        kw_target = kw_target_wan * 10000  # 10,000 kW -> kW
 
-        # 以上一年结果为保底
+        # Use the previous year's result as the baseline
         df_prov[year_col] = df_prov[prev_col].copy()
 
         already = df_prov[year_col].sum()
         remain = kw_target - already
 
         if remain <= 0:
-            print(f"  {year_col}: 目标 {kw_target_wan:.1f}万kW 已由上一年满足，无需新增")
+            print(f"  {year_col}: target {kw_target_wan:.1f} x 10,000 kW is already met by the previous year; no addition needed")
             prev_col = year_col
             continue
 
@@ -216,9 +216,9 @@ def plan_install_multiyear(df, shengcode, kw_targets, year_cols):
             allocated += alloc
 
         print(
-            f"  {year_col}: 目标 {kw_target_wan:.1f}万kW, "
-            f"新增 {allocated/10000:.1f}万kW, "
-            f"未分配 {max(remain,0)/10000:.1f}万kW"
+            f"  {year_col}: target {kw_target_wan:.1f} x 10,000 kW, "
+            f"added {allocated/10000:.1f} x 10,000 kW, "
+            f"unallocated {max(remain,0)/10000:.1f} x 10,000 kW"
         )
         prev_col = year_col
 
@@ -226,11 +226,11 @@ def plan_install_multiyear(df, shengcode, kw_targets, year_cols):
 
 
 # ============================================================
-# 4. 批量运行：对所有省份 × 所有年份
+# 4. Batch processing: all provinces x all years
 # ============================================================
 def allocate_by_plan(df, plan_df, score_field, label):
-    """按省份和评分字段分配，返回结果列表。"""
-    print(f"读取{label}评分数据: {score_field}...")
+    """Allocate by province and score field, returning a list of results."""
+    print(f"Reading {label} score data: {score_field}...")
     score_df = load_score_data(score_path, score_field)
     df = df.merge(score_df, on=NID10_INT, how="left")
     df["Score"] = df["Score"].fillna(0)
@@ -240,11 +240,11 @@ def allocate_by_plan(df, plan_df, score_field, label):
         shengcode = row["Shengcode"]
 
         prov_targets = [row[col] for col in PROVINCE_PLAN_COLS]
-        print(f"\n省份: {shengcode} | {label} Province目标(万kW): {prov_targets}")
+        print(f"\nProvince: {shengcode} | {label} Province targets (10,000 kW): {prov_targets}")
         df_prov = plan_install_multiyear(df, shengcode, prov_targets, PROV_YEAR_COLS)
 
         lc_targets = [row[col] for col in LOWCARBON_PLAN_COLS]
-        print(f"省份: {shengcode} | {label} LowCarbon目标(万kW): {lc_targets}")
+        print(f"Province: {shengcode} | {label} LowCarbon targets (10,000 kW): {lc_targets}")
         df_lc = plan_install_multiyear(df, shengcode, lc_targets, LC_YEAR_COLS)
 
         if not df_prov.empty and not df_lc.empty:
@@ -257,18 +257,18 @@ def allocate_by_plan(df, plan_df, score_field, label):
 
 def run_allocation(energy_type="wind"):
     """
-    energy_type: 'wind' 或 'solar'
+    energy_type: 'wind' or 'solar'
     """
     print(f"\n{'='*60}")
-    print(f"  开始分配: {energy_type.upper()}")
+    print(f"  Starting allocation: {energy_type.upper()}")
     print(f"{'='*60}")
 
-    # ---- 读取规划表 ----
+    # ---- Read the planning table ----
     sheet = wind_sheetname if energy_type == "wind" else solar_sheetname
-    print("读取规划表...")
+    print("Reading the planning table...")
     plan_df = pd.read_excel(planning_path, sheet_name=sheet)
 
-    # ---- 读取网格潜力 + 现状数据 ----
+    # ---- Read grid potential + current-installation data ----
     if energy_type == "wind":
         pot_shp = potential_wind_shp
         pot_field = potential_cap_wind
@@ -278,12 +278,12 @@ def run_allocation(energy_type="wind"):
         pot_field = potential_cap_solar
         cur_fc = current_solar_fc
 
-    print("读取网格潜力 + 现状数据...")
+    print("Reading grid potential + current-installation data...")
     grid_df = load_grid_data(pot_shp, pot_field, cur_fc)
 
     results = []
     if energy_type == "wind":
-        # 分离陆上/海上网格并分别使用对应评分字段
+        # Separate onshore/offshore grid cells and use their respective score fields
         onshore_grid = grid_df.loc[grid_df["Shengcode"] != 100].copy()
         offshore_grid = grid_df.loc[grid_df["Shengcode"] == 100].copy()
 
@@ -293,12 +293,12 @@ def run_allocation(energy_type="wind"):
         if not onshore_plan.empty:
             results.extend(allocate_by_plan(onshore_grid, onshore_plan, onshore_wind_score, "Onshore"))
         else:
-            print("  ⚠ Wind 规划表中未找到陆上省份行，跳过陆上分配")
+            print("  ⚠ No onshore province rows found in the Wind planning table; skipping onshore allocation")
 
         if not offshore_plan.empty:
             results.extend(allocate_by_plan(offshore_grid, offshore_plan, offshore_wind_score, "Offshore"))
         else:
-            print("  ⚠ Wind 规划表中未找到 Shengcode=100 的海上行，跳过海上分配")
+            print("  ⚠ No offshore row with Shengcode=100 found in the Wind planning table; skipping offshore allocation")
     else:
         results.extend(allocate_by_plan(grid_df, plan_df, onshore_solar_score, "Solar"))
 
@@ -307,19 +307,19 @@ def run_allocation(energy_type="wind"):
 
     final_df = pd.concat(results, ignore_index=True)
 
-    # ---- 只保留指定输出列 ----
+    # ---- Retain only the specified output columns ----
     keep_cols = [c for c in OUTPUT_COLS if c in final_df.columns]
     final_df = final_df[keep_cols]
 
-    # ---- 汇总检查 ----
+    # ---- Summary check ----
     print(f"\n{'='*60}")
-    print("分配结果汇总（万kW）:")
+    print("Allocation result summary (10,000 kW):")
     print(f"{'='*60}")
     summary = final_df.groupby("Shengcode")[ALL_YEAR_COLS].sum() / 10000
     print(summary.to_string())
 
     total = final_df[ALL_YEAR_COLS].sum() / 10000
-    print(f"\n全国合计(万kW):")
+    print(f"\nNational total (10,000 kW):")
     for col in ALL_YEAR_COLS:
         print(f"  {col}: {total[col]:.1f}")
 
@@ -328,27 +328,27 @@ def run_allocation(energy_type="wind"):
         rf"processing\tables\{energy_type}_allocation_summary.csv"
     )
     summary.to_csv(summary_path, encoding="utf-8-sig")
-    print(f"分省汇总已导出: {summary_path}")
+    print(f"Provincial summary exported: {summary_path}")
 
     return final_df
 
 
 # ============================================================
-# 5. 结果回写到 shapefile（可选）
+# 5. Write results back to a shapefile (optional)
 # ============================================================
 def write_results_to_shp(final_df, output_shp, grid_shp):
-    """将分配结果 join 回 shapefile 并输出（含 kw2025~kw2060）"""
+    """Join allocation results back to a shapefile and output kw2025 through kw2060."""
     import arcpy
     arcpy.env.overwriteOutput = True
 
-    # 先导出为 CSV，再通过 arcpy join
+    # Export to CSV first, then join through arcpy
     csv_path = output_shp.replace(".shp", "_result.csv")
     final_df.to_csv(csv_path, index=False)
 
-    # 复制原始 shp
+    # Copy the original shapefile
     arcpy.management.CopyFeatures(grid_shp, output_shp)
 
-    # 删除多余字段，只保留 NID50, NID10_INT, Shengcode
+    # Delete unnecessary fields, retaining only NID50, NID10_INT, and Shengcode
     keep_fields = {"NID50", NID10_INT, "Shengcode", "cap_kw", "cap_kw_new",
                    "FID", "Shape", "OBJECTID", "OID"}
     all_fields = arcpy.ListFields(output_shp)
@@ -357,12 +357,12 @@ def write_results_to_shp(final_df, output_shp, grid_shp):
     if drop_fields:
         arcpy.management.DeleteField(output_shp, drop_fields)
 
-    # 添加年份字段并赋值
+    # Add year fields and assign values
     for col in ALL_YEAR_COLS:
         arcpy.management.AddField(output_shp, col, "DOUBLE")
 
-    # 用 UpdateCursor 写入（处理 NID10_INT 可能重复的情况）
-    # 按 NID10_INT 汇总（如有重复取合计）
+    # Write using UpdateCursor (handling potentially duplicate NID10_INT values)
+    # Aggregate by NID10_INT (sum duplicate values)
     agg_df = final_df.groupby(NID10_INT)[ALL_YEAR_COLS].sum()
     lookup = agg_df.to_dict("index")
 
@@ -376,20 +376,20 @@ def write_results_to_shp(final_df, output_shp, grid_shp):
                     row[i] = lookup[nid][col]
                 cursor.updateRow(row)
 
-    print(f"结果已写入: {output_shp}")
+    print(f"Results written to: {output_shp}")
 
 
 # ============================================================
-# 6. 主入口
+# 6. Main entry point
 # ============================================================
 if __name__ == "__main__":
-    # ---- 风电分配 ----
+    # ---- Wind allocation ----
     wind_result = run_allocation("wind")
 
-    # ---- 光伏分配 ----
+    # ---- Solar allocation ----
     solar_result = run_allocation("solar")
 
-    # ---- 可选：导出结果 ----
+    # ---- Optional: export results ----
     output_folder = os.path.join(base_folder, r"processing\gisfiles\GridValidArea")
 
     wind_output = os.path.join(output_folder, "grid10km_wind_planned.shp")
@@ -398,4 +398,4 @@ if __name__ == "__main__":
     solar_output = os.path.join(output_folder, "grid10km_solar_planned.shp")
     write_results_to_shp(solar_result, solar_output, potential_solar_shp)
 
-    print("\n✅ 全部分配完成！")
+    print("\n✅ All allocations complete!")
