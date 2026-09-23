@@ -40,25 +40,25 @@ for p in path_list:
     full_path = os.path.join(base_folder, p)
     if arcpy.Exists(full_path):
         valid_inputs.append(full_path)
-        print(f"[找到] {os.path.basename(full_path)}")
+        print(f"[Found] {os.path.basename(full_path)}")
     else:
-        print(f"[跳过] 文件不存在: {full_path}")
+        print(f"[Skipped] File not found: {full_path}")
 
 if not valid_inputs:
-    print("未找到任何输入文件，退出。")
+    print("No input files found. Exiting.")
 else:
     arcpy.env.outputCoordinateSystem = arcpy.Describe(valid_inputs[0]).spatialReference
 
     # Step 1: Merge all layers into memory (avoid writing temporary disk files)
     merged = r"in_memory\temp_merged"
-    print(f"\n合并 {len(valid_inputs)} 个图层...  {elapsed()}")
+    print(f"\nMerging {len(valid_inputs)} layers...  {elapsed()}")
     arcpy.management.Merge(valid_inputs, merged)
-    print(f"合并完成  {elapsed()}")
+    print(f"Merge complete  {elapsed()}")
 
     # Step 2: Dissolve into a single MultiPolygon feature
-    print(f"开始溶解...  {elapsed()}")
+    print(f"Starting dissolve...  {elapsed()}")
     arcpy.management.Dissolve(merged, output_path, multi_part="MULTI_PART")
-    print(f"溶解完成  {elapsed()}")
+    print(f"Dissolve complete  {elapsed()}")
 
     arcpy.management.Delete(merged)
-    print(f"\n输出文件: {output_path}  总耗时 {elapsed()}")
+    print(f"\nOutput file: {output_path}  Total elapsed time: {elapsed()}")
