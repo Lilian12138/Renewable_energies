@@ -7,20 +7,20 @@ import os
 # input
 src_grid = os.path.join(base_folder, r"processing\arcprojects\MyProject1\MyProject1.gdb\CL_WGS84")
 
-# 目标：敏感性分析独立数据库
+# Target: a standalone database for sensitivity analysis
 sens_gdb = os.path.join(base_folder, r"processing\arcprojects\MyProject1\sensitivity.gdb")
-grid_10km = os.path.join(sens_gdb, "CL_WGS84")   # 副本，所有情景字段写在这里
+grid_10km = os.path.join(sens_gdb, "CL_WGS84")   # Copy where all scenario fields are written
 
 arcpy.env.overwriteOutput = True
 
-# 如果 sensitivity.gdb 不存在，先创建
+# Create sensitivity.gdb if it does not exist
 if not arcpy.Exists(sens_gdb):
     gdb_folder = os.path.dirname(sens_gdb)
     gdb_name = os.path.basename(sens_gdb)
     arcpy.management.CreateFileGDB(gdb_folder, gdb_name)
     print(f"[Created] {sens_gdb}")
 
-# 把原始网格复制到 sensitivity.gdb（只做一次；已存在则覆盖）
+# Copy the original grid to sensitivity.gdb (run once; overwrite if it already exists)
 arcpy.management.CopyFeatures(src_grid, grid_10km)
 print(f"[Copied] {src_grid} -> {grid_10km}")
 
@@ -48,7 +48,7 @@ def calculate_weighted_score(fc, grid_filter, index_fields, weights, score_field
 
 
 # ==========================================================
-# 情景权重定义
+# Scenario weight definitions
 # ==========================================================
 wind_onshore_filter = "Shengcode <> 100 AND Shengcode > 0"
 wind_onshore_index = ['idx_terrain', 'wind_idx_install', 'idx_wind', 'idx_road']
@@ -62,7 +62,7 @@ wind_onshore_scenarios = {
 
 wind_offshore_filter = "Shengcode = 100"
 wind_offshore_index = ['off_idx_shore', 'off_idx_install', 'off_idx_wind']
-# 这里按你给定的 offshore 权重生成 4 个情景；不额外生成 terrain 情景。
+# Generate four scenarios using the specified offshore weights; do not generate an additional terrain scenario.
 wind_offshore_scenarios = {
     "baseline": [40, 30, 30],
     "resource": [25, 25, 50],
@@ -87,7 +87,7 @@ def run_all_scenarios(prefix, fc, grid_filter, index_fields, scenarios):
         calculate_weighted_score(fc, grid_filter, index_fields, weights, score_field)
 
 
-# ============ 执行 ============
+# ============ Execution ============
 run_all_scenarios("wind_onshore",  grid_10km, wind_onshore_filter,  wind_onshore_index,  wind_onshore_scenarios)
 run_all_scenarios("wind_offshore", grid_10km, wind_offshore_filter, wind_offshore_index, wind_offshore_scenarios)
 run_all_scenarios("pv_onshore",    grid_10km, pv_onshore_filter,    pv_onshore_index,    pv_onshore_scenarios)
