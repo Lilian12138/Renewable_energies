@@ -101,13 +101,13 @@ area_by_grid(resident_fc, "resident_km2", "res")
 
 # ---------------------------------------------------------------------------
 # 4. valid area calculation
-# valid_km2 = grid_km2 - limited_km2 - landred - seared - resident_km2 × 75%
+# valid_km2 = grid_km2 - limited_km2 - resident_km2 × 75%
 # ---------------------------------------------------------------------------
 print(f"[4/5] valid area calcaulation...  {elapsed()}")
 arcpy.management.AddField(output_fc, "valid_km2", "DOUBLE")
 arcpy.management.CalculateField(
     output_fc, "valid_km2",
-    "max(!grid_km2! - !limited_km2! - !Landred! - !Seared! - (!resident_km2! * 0.75), 0)",
+    "max(!grid_km2! - !limited_km2! - (!resident_km2! * 0.75), 0)",
     "PYTHON3"
 )
 
