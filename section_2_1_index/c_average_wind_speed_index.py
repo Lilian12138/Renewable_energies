@@ -84,7 +84,7 @@ with arcpy.da.UpdateCursor(grid_fc, [GRID_ID_FIELD, "idx_wind"]) as cur:
         row[1] = wind_score(val)
         cur.updateRow(row)
 
-# 写回原始要素类
+# write back to the original 10km grid
 add_field_safe(grid_10km, "idx_wind", "DOUBLE")
 join_dict = {r[0]: r[1] for r in arcpy.da.SearchCursor(grid_fc, [GRID_ID_FIELD, "idx_wind"])}
 with arcpy.da.UpdateCursor(grid_10km, [GRID_ID_FIELD, "idx_wind"], GRID_FILTER) as cur:
