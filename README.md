@@ -47,7 +47,7 @@ Uses an **exclusion method**: all restrictive factors are overlaid, and the comb
 | High-elevation area | `c_dem_above_4000m.py` | DEM ≥ 4000 m pixels extracted and vectorized |
 | Low wind-speed area | `d_windspeed_below_4p5.py` | Annual mean wind speed at 100 m < 4.5 m/s pixels extracted and vectorized |
 | Steep-slope area | `e_slope_above_30.py` | Slope ≥ 30° pixels extracted and vectorized |
-| Combined restriction dissolve | `f_limited_area_dissolve.py` | All factors (plus water bodies, nature reserves, solar panels) merged and dissolved into a single MultiPolygon |
+| Combined restriction dissolve | `f_limited_area_dissolve.py` | All factors (plus water bodies, nature reserves, solar panels, buildup) merged and dissolved into a single MultiPolygon |
 | Area statistics | `g_wind_valid_stastic_areakm2.py` | Intersection of restricted areas with grid, geodesic area calculated and aggregated by NID10, written back to grid layer |
 
 **Raster Processing (GDAL)**: Rasters are processed in 512-row blocks to avoid loading the full national 250 m dataset (~700 million pixels) into memory at once.
@@ -72,7 +72,7 @@ Reuses slope, turbine buffer, and road/railway buffer outputs from 1.1, then add
 **Solar Developable Area Formula**
 
 ```math
-\text{valid\_km2} = \text{grid\_km2} - \text{limited\_km2} - \text{Landred} - \text{Seared} - \text{resident\_km2} \times 75\%
+\text{valid\_km2} = \text{grid\_km2} - \text{limited\_km2} - \text{resident\_km2} \times 75\%
 ```
 
 > Residential areas are not fully excluded — only 75% of their area is deducted (25% utilization rate retained).
