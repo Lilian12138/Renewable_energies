@@ -23,7 +23,7 @@ def add_field_safe(fc, field_name, field_type):
     if field_name not in existing:
         arcpy.management.AddField(fc, field_name, field_type)
 
-# ---------- 筛选陆上网格 ----------
+# ---------- Filter onshore grid cells ----------
 grid_layer = "grid_ghi_layer"
 arcpy.MakeFeatureLayer_management(grid_10km, grid_layer, GRID_FILTER)
 
@@ -40,7 +40,7 @@ arcpy.sa.ZonalStatisticsAsTable(grid_fc, GRID_ID_FIELD, ghi_path, ghi_table, "DA
 
 ghi_zonal_dict = {r[0]: r[1] for r in arcpy.da.SearchCursor(ghi_table, [GRID_ID_FIELD, "MEAN"])}
 
-# ---------- 中心点提取作为兜底 ----------
+# ---------- Extract centroids as a fallback ----------
 centroids = os.path.join(scratch_gdb, "grid_centroids_ghi")
 if arcpy.Exists(centroids):
     arcpy.management.Delete(centroids)
@@ -53,7 +53,7 @@ with arcpy.da.SearchCursor(centroids, [GRID_ID_FIELD, "ghi_pt"]) as cur:
         if r[1] is not None:
             ghi_pt_dict[r[0]] = r[1]
 
-# ---------- 合并: zonal优先, 中心点兜底 ----------
+# ---------- Merge: prioritize zonal results, use centroids as fallback ----------
 ghi_values = {}
 for fid, in arcpy.da.SearchCursor(grid_fc, [GRID_ID_FIELD]):
     val = ghi_zonal_dict.get(fid)
@@ -62,7 +62,7 @@ for fid, in arcpy.da.SearchCursor(grid_fc, [GRID_ID_FIELD]):
     if val is not None:
         ghi_values[fid] = val
 
-# ---------- 归一化 0-1 ----------
+# ---------- Normalize to 0-1 ----------
 valid_vals = list(ghi_values.values())
 min_val = min(valid_vals)
 max_val = max(valid_vals)
@@ -80,7 +80,7 @@ with arcpy.da.UpdateCursor(grid_fc, [GRID_ID_FIELD, "idx_ghi"]) as cur:
             row[1] = 0.0
         cur.updateRow(row)
 
-# ---------- 写回原始要素类 ----------
+# ---------- Write back to the original feature class ----------
 add_field_safe(grid_10km, "idx_ghi", "DOUBLE")
 join_dict = {r[0]: r[1] for r in arcpy.da.SearchCursor(grid_fc, [GRID_ID_FIELD, "idx_ghi"])}
 with arcpy.da.UpdateCursor(grid_10km, [GRID_ID_FIELD, "idx_ghi"], GRID_FILTER) as cur:
