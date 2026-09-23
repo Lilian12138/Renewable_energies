@@ -15,7 +15,7 @@ installation_gdb = os.path.join(base_folder, r"processing\arcprojects\MyProject1
 
 arcpy.env.overwriteOutput = True
 
-# ---- 读取省级装机表 ----
+# ---- Read the provincial installed-capacity table ----
 installation_df = pd.read_excel(installation_table, sheet_name="2025", header=1)
 
 pv_capacity_col = 'PV installed capacity(10MW)'
@@ -28,11 +28,11 @@ offshore_wind_capacity_col = 'Offshore wind installed capacity (10 MW)'
 shengcode_col = 'Shengcode'
 shengname_col = 'Shengname_cn'
 
-# 单位换算常量
+# Unit conversion constants
 UNIT_10MW_TO_KW = 1e4          # 10 MW = 10,000 kW
 UNIT_10E8KWH_TO_KWH = 1e8     # 10^8 kWh = 100,000,000 kWh
 
-# 过滤有效省份（排除 TOTAL 行和无效代码）
+# Filter valid provinces (exclude the TOTAL row and invalid codes)
 province_df = installation_df[
     (installation_df[shengcode_col] > 0) &
     (installation_df[shengcode_col] != 100)
@@ -40,10 +40,10 @@ province_df = installation_df[
 province_df[shengcode_col] = province_df[shengcode_col].astype(int)
 
 # ============================================================
-# 1. 陆上风电：按省内网格风机数量占比分配装机，按满发小时算发电量
+# 1. Onshore wind: allocate capacity by each grid cell's share of provincial turbine count and calculate generation using full-load hours
 # ============================================================
 
-# --- 读取风电网格属性表 ---
+# --- Read the wind grid attribute table ---
 wind_fields = [f.name for f in arcpy.ListFields(wind_turbines_grid)]
 wind_arr = arcpy.da.TableToNumPyArray(wind_turbines_grid, ['NID10', 'Shengcode', 'Wind_Turbine_Count'], skip_nulls=False)
 wind_gdf = pd.DataFrame(wind_arr, columns=['NID10', 'Shengcode', 'Wind_Turbine_Count'])
@@ -51,33 +51,33 @@ wind_gdf['NID10'] = wind_gdf['NID10'].astype(int)
 wind_gdf['Shengcode'] = wind_gdf['Shengcode'].astype(int)
 wind_gdf['Wind_Turbine_Count'] = wind_gdf['Wind_Turbine_Count'].fillna(0).astype(float)
 
-# 分离陆上 / 海上
+# Separate onshore / offshore grids
 onshore_wind = wind_gdf[wind_gdf['Shengcode'] != 100].copy()
 offshore_wind = wind_gdf[wind_gdf['Shengcode'] == 100].copy()
 
-# 省内风机数合计 & 占比
+# Provincial turbine count totals and shares
 onshore_prov_sum = onshore_wind.groupby('Shengcode')['Wind_Turbine_Count'].transform('sum')
 onshore_wind['prov_ratio'] = np.where(onshore_prov_sum > 0,
                                        onshore_wind['Wind_Turbine_Count'] / onshore_prov_sum, 0)
 
-# 合并省级装机数据
+# Merge provincial installed-capacity data
 prov_wind = province_df[[shengcode_col, onshore_wind_capacity_col, wind_full_load_hours]].copy()
 prov_wind.rename(columns={shengcode_col: 'Shengcode'}, inplace=True)
 prov_wind['Shengcode'] = prov_wind['Shengcode'].astype(int)
 
 onshore_wind = onshore_wind.merge(prov_wind, on='Shengcode', how='left')
 
-# 装机 kW = 省装机(10MW) × 占比 × 10000
+# Installed capacity in kW = provincial capacity (10 MW) × share × 10,000
 onshore_wind['kw2025'] = (onshore_wind[onshore_wind_capacity_col].fillna(0)
                           * onshore_wind['prov_ratio']
                           * UNIT_10MW_TO_KW)
 
-# 发电量 kWh = 装机 kW × 满发小时
+# Generation in kWh = installed capacity in kW × full-load hours
 onshore_wind['kwh2025'] = (onshore_wind['kw2025']
                            * onshore_wind[wind_full_load_hours].fillna(0))
 
 # ============================================================
-# 2. 海上风电：Shengcode=100 的网格按风机数量占比分配总量
+# 2. Offshore wind: allocate the total to Shengcode=100 grid cells by turbine-count share
 # ============================================================
 
 total_row = installation_df[installation_df['Shengname_cn'] == 'TOTAL'].iloc[0]
@@ -94,7 +94,7 @@ offshore_wind['kw2025'] = (offshore_capacity_total
 offshore_wind['kwh2025'] = offshore_wind['kw2025'] * offshore_hours
 
 # ============================================================
-# 合并陆上+海上，写回风电网格
+# Combine onshore and offshore results and write them back to the wind grid
 # ============================================================
 
 wind_result = pd.concat([onshore_wind, offshore_wind], ignore_index=True)
@@ -116,10 +116,10 @@ with arcpy.da.UpdateCursor(wind_turbines_grid, ['NID10', 'kw2025', 'kwh2025']) a
             row[1], row[2] = 0.0, 0.0
         cur.updateRow(row)
 
-print("风电网格写入完成（陆上+海上）")
+print("Wind grid update complete (onshore + offshore)")
 
 # ============================================================
-# 3. 光伏：按省内网格面积占比分配装机，按满发小时算发电量
+# 3. Solar PV: allocate capacity by each grid cell's share of provincial area and calculate generation using full-load hours
 # ============================================================
 
 solar_fields = [f.name for f in arcpy.ListFields(solar_panel_grid)]
@@ -129,31 +129,31 @@ solar_gdf['NID10'] = solar_gdf['NID10'].astype(int)
 solar_gdf['Shengcode'] = solar_gdf['Shengcode'].astype(int)
 solar_gdf['Solar_Area_m2'] = solar_gdf['Solar_Area_m2'].fillna(0).astype(float)
 
-# 只处理陆上
+# Process onshore grids only
 solar_gdf = solar_gdf[solar_gdf['Shengcode'] != 100].copy()
 
-# 省内面积合计 & 占比
+# Provincial area totals and shares
 prov_area_sum = solar_gdf.groupby('Shengcode')['Solar_Area_m2'].transform('sum')
 solar_gdf['prov_ratio'] = np.where(prov_area_sum > 0,
                                     solar_gdf['Solar_Area_m2'] / prov_area_sum, 0)
 
-# 合并省级光伏数据
+# Merge provincial solar PV data
 prov_solar = province_df[[shengcode_col, pv_capacity_col, solar_full_load_hours]].copy()
 prov_solar.rename(columns={shengcode_col: 'Shengcode'}, inplace=True)
 prov_solar['Shengcode'] = prov_solar['Shengcode'].astype(int)
 
 solar_gdf = solar_gdf.merge(prov_solar, on='Shengcode', how='left')
 
-# 装机 kW
+# Installed capacity in kW
 solar_gdf['kw2025'] = (solar_gdf[pv_capacity_col].fillna(0)
                         * solar_gdf['prov_ratio']
                         * UNIT_10MW_TO_KW)
 
-# 发电量 kWh = 装机 × 满发小时
+# Generation in kWh = installed capacity × full-load hours
 solar_gdf['kwh2025'] = (solar_gdf['kw2025']
                         * solar_gdf[solar_full_load_hours].fillna(0))
 
-# 写回光伏网格
+# Write back to the solar grid
 for col in ['kw2025', 'kwh2025']:
     if col not in solar_fields:
         arcpy.management.AddField(solar_panel_grid, col, 'DOUBLE')
@@ -172,4 +172,4 @@ with arcpy.da.UpdateCursor(solar_panel_grid, ['NID10', 'kw2025', 'kwh2025']) as 
             row[1], row[2] = 0.0, 0.0
         cur.updateRow(row)
 
-print("光伏网格写入完成")
+print("Solar grid update complete")

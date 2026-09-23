@@ -12,7 +12,7 @@ installation_gdb = os.path.join(base_folder, r"processing\arcprojects\MyProject1
 
 arcpy.env.overwriteOutput = True
 
-# ---------- a. 统计每个网格内风机数量 ----------
+# ---------- a. Count wind turbines in each grid cell ----------
 
 wind_output = os.path.join(installation_gdb, "grid_wind_turbine_count")
 
@@ -24,20 +24,20 @@ arcpy.analysis.SpatialJoin(
     join_type="KEEP_ALL",
     match_option="CONTAINS"
 )
-# SpatialJoin 默认生成 Join_Count 字段，即每个网格包含的风机数量
-# 重命名字段便于识别
+# SpatialJoin creates the Join_Count field by default, representing the number of wind turbines in each grid cell
+# Rename the field for clarity
 arcpy.management.AlterField(wind_output, "Join_Count", "Wind_Turbine_Count", "Wind_Turbine_Count")
 
-print("风机数量统计完成 ->", wind_output)
+print("Wind turbine count statistics complete ->", wind_output)
 
-# ---------- b. 统计每个网格内光伏板面积(m²) ----------
+# ---------- b. Calculate the solar panel area (m²) in each grid cell ----------
 
-# 先为 solar_panel 计算面积字段（投影到等面积坐标系计算 m²）
-# 添加面积字段
+# First calculate an area field for solar_panel (project to an equal-area coordinate system to calculate m²)
+# Add the area field
 arcpy.management.AddField(solar_panel_path, "Area_m2", "DOUBLE")
 
-# 用 WGS84 数据时，geometry area 默认是度，需要指定单位
-# 使用 CalculateGeometryAttributes 以 m² 为单位计算
+# With WGS84 data, geometry area defaults to degrees, so the unit must be specified
+# Use CalculateGeometryAttributes to calculate in m²
 arcpy.management.CalculateGeometryAttributes(
     solar_panel_path,
     [["Area_m2", "AREA_GEODESIC"]],
@@ -46,12 +46,12 @@ arcpy.management.CalculateGeometryAttributes(
 
 solar_output = os.path.join(installation_gdb, "grid_solar_panel_area")
 
-# 空间连接，对 Area_m2 求和
+# Spatial join and sum Area_m2
 field_mappings = arcpy.FieldMappings()
 field_mappings.addTable(grid_10km)
 field_mappings.addTable(solar_panel_path)
 
-# 找到 Area_m2 字段，设置合并规则为 Sum
+# Find the Area_m2 field and set its merge rule to Sum
 area_idx = field_mappings.findFieldMapIndex("Area_m2")
 area_fm = field_mappings.getFieldMap(area_idx)
 area_fm.mergeRule = "Sum"
@@ -67,7 +67,7 @@ arcpy.analysis.SpatialJoin(
     match_option="CONTAINS"
 )
 
-# 重命名
+# Rename the field
 arcpy.management.AlterField(solar_output, "Area_m2", "Solar_Area_m2", "Solar_Area_m2")
 
-print("光伏面积统计完成 ->", solar_output)
+print("Solar panel area statistics complete ->", solar_output)
