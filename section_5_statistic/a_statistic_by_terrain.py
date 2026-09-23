@@ -1,8 +1,8 @@
 """
-按地形类型 + 省份分类统计风电/光伏装机容量
-逻辑：取网格中心点，提取地形栅格(Reclass_geomor.tif)的值 1/2/3/4，
-      分别对应 Plain, Hills, Mountainous, Complex terrain，
-      再按 (省份 Shengcode, 地形类型) 对各年份/情景装机容量求和。
+Summarize wind/solar installed capacity by terrain type and province.
+Logic: take grid centroids and extract terrain raster (Reclass_geomor.tif) values 1/2/3/4,
+       corresponding to Plain, Hills, Mountainous, and Complex terrain,
+       then sum installed capacity for each year/scenario by (province Shengcode, terrain type).
 """
 
 from pathlib import Path
@@ -18,14 +18,14 @@ solar_terrain_shp = os.path.join(base_folder, r"processing\gisfiles\GridValidAre
 terrain_type = os.path.join(base_folder, r"processing\gisfiles\terrain_type\Reclass_geom1.tif")
 
 
-# 按照网格中心点提取地形类型 1，2，3，4 分别代表Plain, Hills, Mountainous, Complex terrain
+# Extract terrain types at grid centroids; 1, 2, 3, and 4 represent Plain, Hills, Mountainous, and Complex terrain
 NID10_INT = "NID10_INT"
 SHENGCODE_FIELD = "Shengcode"
 TERRAIN_FIELD = "terrain"
 TERRAIN_MAP = {1: "Plain", 2: "Hills", 3: "Mountainous", 4: "Complex terrain"}
 TERRAIN_ORDER = ["Plain", "Hills", "Mountainous", "Complex terrain"]
 
-# 省的id是Shengcode
+# Province ID is Shengcode
 PROVINCE_MAP = {
     100: "Offshore", 65: "Xinjiang", 15: "Inner Mongolia", 23: "Heilongjiang",
     62: "Gansu", 63: "Qinghai", 22: "Jilin", 13: "Hebei", 37: "Shandong",
@@ -47,7 +47,7 @@ arcpy.CheckOutExtension("Spatial")
 
 
 def read_fc_to_df(fc_path, fields):
-    """用 arcpy 将 feature class / shapefile 读为 DataFrame"""
+    """Read a feature class / shapefile into a DataFrame using arcpy."""
     all_fields = [f.name for f in arcpy.ListFields(fc_path)]
     use_fields = [f for f in fields if f in all_fields]
     data = [row for row in arcpy.da.SearchCursor(fc_path, use_fields)]
@@ -55,7 +55,7 @@ def read_fc_to_df(fc_path, fields):
 
 
 def build_filled_terrain_raster():
-    """用欧氏分配(最近邻)填补地形栅格的 NoData 区域，避免网格中心点落在 NoData 处而提取不到地形值"""
+    """Fill NoData terrain-raster areas using Euclidean allocation (nearest neighbor) so grid centroids always receive terrain values."""
     if not arcpy.Exists(terrain_filled_raster):
         filled = arcpy.sa.EucAllocation(terrain_type)
         filled.save(terrain_filled_raster)
@@ -63,8 +63,8 @@ def build_filled_terrain_raster():
 
 
 def extract_terrain_by_centroid(grid_shp, out_name):
-    """取网格中心点，提取地形栅格值；若中心点落在 NoData 处，除 Shengcode=100(海上)外，
-    其余省份改用最近有效栅格的地形值"""
+    """Extract terrain-raster values at grid centroids; when a centroid falls on NoData,
+    use the nearest valid raster value except for Shengcode=100 (offshore)."""
     centroids = os.path.join(scratch_gdb, out_name)
     arcpy.management.FeatureToPoint(grid_shp, centroids, "CENTROID")
 
@@ -84,14 +84,14 @@ def extract_terrain_by_centroid(grid_shp, out_name):
     return df_terrain[[NID10_INT, "terrain_type"]]
 
 
-# 分地形统计装机量
+# Summarize installed capacity by terrain type
 wind_province_columns = ['kw2025'] + [f'prov_{i}' for i in [2030,2035,2040,2050,2060]]
 wind_low_carbon_columns = ['kw2025'] + [f'lc_{i}' for i in [2030,2035,2040,2050,2060]]
 solar_province_columns = ['kw2025'] + [f'prov_{i}' for i in [2030,2035,2040,2050,2060]]
 solar_low_carbon_columns = ['kw2025'] + [f'lc_{i}' for i in [2030,2035,2040,2050,2060]]
 
 
-# 输出tables
+# Output tables
 output_folder = os.path.join(base_folder, r"processing\tables")
 output_excel_path = os.path.join(output_folder, "statistic_by_province_terrain.xlsx")
 
@@ -100,9 +100,9 @@ YEARS = [2025, 2030, 2035, 2040, 2050, 2060]
 
 
 def statistic_by_terrain(grid_shp, energy_type):
-    """提取网格中心点地形类型，并按 (Shengcode, 省份, 地形) 统计 province / low_carbon 两套情景装机量"""
+    """Extract terrain types at grid centroids and summarize province / low_carbon scenario capacity by (Shengcode, province, terrain)."""
     print(f"\n{'='*60}")
-    print(f"  分省分地形统计装机量: {energy_type.upper()}")
+    print(f"  Installed capacity by province and terrain: {energy_type.upper()}")
     print(f"{'='*60}")
 
     province_columns = wind_province_columns if energy_type == "wind" else solar_province_columns
@@ -145,4 +145,4 @@ if __name__ == "__main__":
         wind_summary.to_excel(writer, sheet_name="wind", index=False)
         solar_summary.to_excel(writer, sheet_name="solar", index=False)
 
-    print(f"\n✅ 分地形统计完成！已导出 -> {output_excel_path}")
+    print(f"\n✅ Terrain-based statistics complete! Exported to -> {output_excel_path}")
