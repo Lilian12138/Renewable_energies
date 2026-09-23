@@ -1,4 +1,4 @@
-## 1.4 valid area of wind speed less than 4.5 m/s
+## valid area of wind speed less than 4.5 m/s
 from pathlib import Path
 base_folder  = Path(__file__).resolve().parents[3]
 import os

@@ -1,4 +1,4 @@
-## 1.4 valid area of slope above 30 degrees
+## valid area of slope above 30 degrees
 from pathlib import Path
 base_folder  = Path(__file__).resolve().parents[3]
 
